@@ -10,6 +10,7 @@ using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Access.AspNet;
 
+using Platform.Api.Development;
 using Platform.Api.Endpoints;
 using Platform.Identity;
 using Platform.Api.Endpoints.Identity;
@@ -17,6 +18,7 @@ using Platform.Api.Interfaces.Identity;
 
 
 using Platform.Identity.Entities;
+using Platform.Identity.Persistence;
 using Platform.Api.Middlewares;
 using Platform.Api.Modules.Identity.RateLimiting;
 using Platform.Api.Services.Identity;
@@ -32,6 +34,12 @@ using PlatformAccessDecision = Platform.Access.Contracts.IAccessDecision;
 using LabVisibilityCourseRole = Platform.LabVisibility.Contracts.CourseRole;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddLocalEnvFile();
+    builder.Configuration.AddUserSecrets<PlatformIdentityDbContext>(optional: true);
+}
 
 // Access module
 builder.Services.AddAccessControl();
@@ -54,6 +62,9 @@ if (kt1Enabled)
 // Continue with the rest of your existing registrations...
 // IDN-01: registracija naloga
 builder.Services.AddIdentityModule();
+
+// IDN-02: prijava, odjava i sesije
+builder.Services.AddIdentityModule(builder.Configuration);
 
 if (builder.Environment.IsDevelopment())
 {
@@ -174,6 +185,10 @@ if (app.Environment.IsDevelopment())
     var membership = app.Services.GetRequiredService<InMemoryCourseMembership>();
     membership.Set(demoCourse, Guid.Parse("11111111-1111-1111-1111-111111111111"), LabVisibilityCourseRole.Teacher);
     membership.Set(demoCourse, Guid.Parse("22222222-2222-2222-2222-222222222222"), LabVisibilityCourseRole.Student);
+
+    // US-02 and US-09: migrate and seed the identity database (skipped without a connection string).
+    if (await app.ApplyIdentityMigrationsAsync())
+        await app.SeedDevelopmentAccountsAsync();
 }
 
 // Health endpoint
