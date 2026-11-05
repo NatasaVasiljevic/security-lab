@@ -9,21 +9,18 @@ using Platform.Access.Contracts;
 using Platform.Access.Domain.Enums;
 using Platform.Access.Domain.Models;
 using Platform.Access.AspNet;
-
 using Platform.Api.Development;
 using Platform.Api.Endpoints;
-using Platform.Identity;
 using Platform.Api.Endpoints.Identity;
 using Platform.Api.Interfaces.Identity;
-
-
-using Platform.Identity.Entities;
-using Platform.Identity.Persistence;
-using Platform.Api.Middlewares;
+using Platform.Api.Middleware;
 using Platform.Api.Modules.Identity.RateLimiting;
 using Platform.Api.Services.Identity;
 using Platform.Audit.Composition;
 using Platform.Authoring.Composition;
+using Platform.Identity;
+using Platform.Identity.Entities;
+using Platform.Identity.Persistence;
 using Platform.LabVisibility.Composition;
 using Platform.LabVisibility.Contracts;
 using Platform.LabVisibility.Infrastructure.Membership;
@@ -75,7 +72,6 @@ else
     builder.Services.AddSingleton<IRequestSubjectResolver, UnauthenticatedSubjectResolver>();
 }
 
-// Servisi sa main grane
 builder.Services.AddAudit();
 builder.Services.AddAuthoring();
 builder.Services.AddLabVisibility();
@@ -87,37 +83,18 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
 
-builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>();
-builder.Services.AddSingleton<ICredentialAuthenticator, UnavailableCredentialAuthenticator>();
-builder.Services.AddSingleton<ISessionIssuer, UnavailableSessionIssuer>();
+builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>(); // TODO: zameniti trajnim repozitorijumom (PostgreSQL)
+builder.Services.AddScoped<ISessionManager, StoreSessionManager>();   // zameniti kad IDN-02 bude gotov
+builder.Services.AddScoped<ISessionManager, SessionManager>();
 builder.Services.AddSingleton<IAuditWriter, LoggerAuditWriter>();
 builder.Services.AddSingleton<IAdminDirectory, ConfigAdminDirectory>();
 builder.Services.AddSingleton<IdentityAccessDecision, AdminOnlyAccessDecision>();
-
 builder.Services.AddScoped<ChangeAccountStatus>();
-builder.Services.AddScoped<LoginAccount>();
+builder.Services.AddScoped<ILoginService, LoginService>();
+builder.Services.AddScoped<ILogoutService, LogoutService>();
+builder.Services.AddScoped<ISessionCreator, StoreSessionCreator>();
 
-
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddScoped<
-        Platform.Api.Interfaces.Identity.IIdentityContext,
-        Platform.Api.Services.Identity.StubIdentityContext>();
-
-    builder.Services.AddSingleton<
-        ISessionManager,
-        DevAlwaysActiveSessionManager>();
-}
-else
-{
-    builder.Services.AddScoped<
-        Platform.Api.Interfaces.Identity.IIdentityContext,
-        Platform.Api.Services.Identity.AnonymousIdentityContext>();
-
-    builder.Services.AddSingleton<
-        ISessionManager,
-        NoOpSessionRevoker>();
-}
+builder.Services.AddScoped<Platform.Api.Interfaces.Identity.IIdentityContext, SessionIdentityContext>();
 
 
 // Laboratories modul
@@ -171,18 +148,9 @@ app.Services.RegisterLabVisibilityAccess();
 if (app.Environment.IsDevelopment())
 {
     var repo = app.Services.GetRequiredService<IAccountRepository>();
-
-    repo.Save(new UserAccount(
-        Guid.Parse("11111111-1111-1111-1111-111111111111"),
-        "admin@example.com"));
-
-    repo.Save(new UserAccount(
-        Guid.Parse("22222222-2222-2222-2222-222222222222"),
-        "student@example.com"));
-
-    repo.Save(new UserAccount(
-        Guid.Parse("33333333-3333-3333-3333-333333333333"),
-        "other@example.com"));
+    repo.Save(new UserAccount(Guid.Parse("11111111-1111-1111-1111-111111111111"), "admin@example.com"));
+    repo.Save(new UserAccount(Guid.Parse("22222222-2222-2222-2222-222222222222"), "student@example.com"));
+    repo.Save(new UserAccount(Guid.Parse("33333333-3333-3333-3333-333333333333"), "other@example.com"));
 
     // AUT-04/AUT-07 demo kurs: 1111 je nastavnik, 2222 student, 3333 nije na kursu.
     var demoCourse = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -202,9 +170,10 @@ app.MapGet("/api/health", () => Results.Ok(new
     service = "security-lab-api",
     note = "Initial scaffold; not a production-ready laboratory platform"
 }))
-.AllowPublic();
+.AllowAnonymous()   // IDN-02 SessionCheckMiddleware
+.AllowPublic();     // ACC-05 AccessControlMiddleware
 
-app.UseMiddleware<SessionValidationMiddleware>();
+app.UseMiddleware<SessionCheckMiddleware>();
 
 app.MapControllers();
 app.MapLaboratories();
