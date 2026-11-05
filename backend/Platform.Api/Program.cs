@@ -1,4 +1,5 @@
 using Platform.Api.Modules.Kt1;
+using Platform.Api.Modules.RevisionReviews;
 using Platform.Api.Modules.Laboratories.Application;
 using Platform.Api.Modules.Laboratories.Infrastructure;
 using Platform.LaboratoryPersistence.Composition;
@@ -82,6 +83,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddLaboratoriesPersistence(
     builder.Configuration.GetConnectionString("Laboratories"));
+builder.Services.AddRevisionReviews();
 
 builder.Services.AddSingleton<IAccountRepository, InMemoryAccountRepository>(); // TODO: zameniti trajnim repozitorijumom (PostgreSQL)
 builder.Services.AddScoped<ISessionManager, StoreSessionManager>();   // zameniti kad IDN-02 bude gotov
@@ -177,6 +179,7 @@ app.UseMiddleware<SessionCheckMiddleware>();
 
 app.MapControllers();
 app.MapLaboratories();
+app.MapRevisionReviews();
 
 if (app.Environment.IsDevelopment())
 {
