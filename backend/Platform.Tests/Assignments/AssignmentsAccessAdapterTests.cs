@@ -285,17 +285,79 @@ public sealed class AssignmentsAccessAdapterTests
         });
     }
 
+    // A request cancelled by the caller is passed on (the caller can stop the work).
     [Test]
     [Property("RequirementId", "ACC-05")]
-    public void Adapters_WhenTheRequestIsCancelled_PassTheCancellationOn()
+    public void Adapters_WhenTheCallerCancelsTheRequest_PassTheCancellationOn()
     {
         var f = new Fixture();
         var account = f.AddAccount();
-        var cancelling = new ThrowingEngine(new OperationCanceledException());
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var cancelling = new ThrowingEngine(new OperationCanceledException(cancelled.Token));
         var extension = new AccessDeadlineExtensionAuthorization(cancelling, f.Accounts);
+        var start = new AccessStartAttemptAuthorization(cancelling, f.Accounts);
 
         Assert.ThrowsAsync<OperationCanceledException>(async () =>
-            await extension.CanExtendAsync(Id(account), f.AssignmentId, f.CourseId.ToString()));
+            await extension.CanExtendAsync(Id(account), f.AssignmentId, f.CourseId.ToString(), cancelled.Token));
+        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await start.CanStartAsync(Id(account), f.AssignmentId, f.CourseId.ToString(), cancelled.Token));
+    }
+
+    // A cancellation that the caller did not ask for (an internal timeout of the engine) is a
+    // failure of a dependency, so the answer is "not allowed", not an exception.
+    [TestCase(typeof(OperationCanceledException))]
+    [TestCase(typeof(TaskCanceledException))]
+    [Property("RequirementId", "ACC-05")]
+    public async Task Adapters_WhenTheEngineTimesOutInternally_DenyInsteadOfThrowing(Type exceptionType)
+    {
+        var f = new Fixture();
+        var account = f.AddAccount();
+        var timedOut = new ThrowingEngine(DependencyTimeout(exceptionType));
+        var extension = new AccessDeadlineExtensionAuthorization(timedOut, f.Accounts);
+        var start = new AccessStartAttemptAuthorization(timedOut, f.Accounts);
+
+        // The caller's token is not cancelled here.
+        var canExtend = await extension.CanExtendAsync(Id(account), f.AssignmentId, f.CourseId.ToString());
+        var canStart = await start.CanStartAsync(Id(account), f.AssignmentId, f.CourseId.ToString());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(canExtend, Is.False);
+            Assert.That(canStart, Is.False);
+        });
+    }
+
+    [TestCase(typeof(OperationCanceledException))]
+    [TestCase(typeof(TaskCanceledException))]
+    [Property("RequirementId", "ACC-05")]
+    public async Task Adapters_WhenTheAccountReaderTimesOutInternally_DenyInsteadOfThrowing(Type exceptionType)
+    {
+        var f = new Fixture();
+        var account = f.AddAccount();
+        var accounts = new ThrowingAccounts(DependencyTimeout(exceptionType));
+        var engine = new ThrowingEngine(new InvalidOperationException("must not be reached"));
+        var extension = new AccessDeadlineExtensionAuthorization(engine, accounts);
+
+        var canExtend = await extension.CanExtendAsync(Id(account), f.AssignmentId, f.CourseId.ToString());
+
+        Assert.That(canExtend, Is.False);
+    }
+
+    [Test]
+    [Property("RequirementId", "ACC-05")]
+    public void Adapters_WhenTheCallerCancelsWhileReadingTheAccount_PassTheCancellationOn()
+    {
+        var f = new Fixture();
+        var account = f.AddAccount();
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var accounts = new ThrowingAccounts(new OperationCanceledException(cancelled.Token));
+        var engine = new ThrowingEngine(new InvalidOperationException("must not be reached"));
+        var extension = new AccessDeadlineExtensionAuthorization(engine, accounts);
+
+        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await extension.CanExtendAsync(Id(account), f.AssignmentId, f.CourseId.ToString(), cancelled.Token));
     }
 
     // ---- audit of access decisions (the engine writes it; the adapters must reach the engine) ----
@@ -411,9 +473,45 @@ public sealed class AssignmentsAccessAdapterTests
         Assert.That(enrolled, Is.False);
     }
 
+    [TestCase(typeof(OperationCanceledException))]
+    [TestCase(typeof(TaskCanceledException))]
+    [Property("RequirementId", "ACC-02")]
+    public async Task IsActiveStudent_WhenTheMembershipReaderTimesOutInternally_IsFalse(Type exceptionType)
+    {
+        var enrollment = new MembershipCourseEnrollmentCheck(
+            new ThrowingMembershipReader(DependencyTimeout(exceptionType)));
+
+        // The caller's token is not cancelled here.
+        var enrolled = await enrollment.IsActiveStudentAsync(
+            Id(Guid.NewGuid()),
+            Guid.NewGuid().ToString("D"));
+
+        Assert.That(enrolled, Is.False);
+    }
+
+    [Test]
+    [Property("RequirementId", "ACC-02")]
+    public void IsActiveStudent_WhenTheCallerCancelsTheRequest_PassesTheCancellationOn()
+    {
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var enrollment = new MembershipCourseEnrollmentCheck(
+            new ThrowingMembershipReader(new OperationCanceledException(cancelled.Token)));
+
+        Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await enrollment.IsActiveStudentAsync(
+                Id(Guid.NewGuid()),
+                Guid.NewGuid().ToString("D"),
+                cancelled.Token));
+    }
+
     // ---- helpers ----
 
     private static string Id(Guid account) => account.ToString("D");
+
+    // An exception that a dependency raises when its own timeout fires (not the caller's token).
+    private static Exception DependencyTimeout(Type exceptionType) =>
+        (Exception)Activator.CreateInstance(exceptionType, "dependency timeout")!;
 
     private sealed class Fixture
     {
@@ -502,6 +600,21 @@ public sealed class AssignmentsAccessAdapterTests
     {
         public ValueTask<AccessDecision> DecideAsync(
             AccessRequest request,
+            CancellationToken cancellationToken = default) => throw exception;
+    }
+
+    private sealed class ThrowingAccounts(Exception exception) : IAccountStateReader
+    {
+        public ValueTask<AccountState> GetStateAsync(
+            Guid accountId,
+            CancellationToken cancellationToken = default) => throw exception;
+    }
+
+    private sealed class ThrowingMembershipReader(Exception exception) : IMembershipReader
+    {
+        public ValueTask<CourseMembership?> GetAsync(
+            Guid accountId,
+            Guid courseId,
             CancellationToken cancellationToken = default) => throw exception;
     }
 }

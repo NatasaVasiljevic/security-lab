@@ -11,8 +11,11 @@ namespace Platform.Api.Modules.AssignmentsAccess;
 // checks the active membership and the role, and writes the access audit record for every
 // decision, including denials.
 //
-// Fail closed: a malformed ID, an unknown account, an engine error or a timeout all end in
-// "not allowed". Only a cancelled request is passed on, so a caller can stop the work.
+// Fail closed: a malformed ID, an unknown account, an engine error or a timeout of a dependency
+// all end in "not allowed". Only a request cancelled by the caller (its own token) is passed on,
+// so a caller can stop the work. An OperationCanceledException that the caller did not ask for
+// (for example an internal timeout of the engine or of a reader) is a failure, not a
+// cancellation, and is answered with "not allowed".
 internal sealed class AssignmentAccessCheck(AccessEngine engine, IAccountStateReader accounts)
 {
     public const string AssignmentResourceType = "assignment";
@@ -47,7 +50,7 @@ internal sealed class AssignmentAccessCheck(AccessEngine engine, IAccountStateRe
             var decision = await engine.DecideAsync(request, cancellationToken).ConfigureAwait(false);
             return decision.Outcome == AccessOutcome.Allow;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }

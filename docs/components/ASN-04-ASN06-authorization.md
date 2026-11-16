@@ -25,7 +25,7 @@
 
 Rules applied on every call:
 
-1. **Fail closed.** A malformed ID, an unknown account, an engine error or a timeout all return `false`. Only a cancelled request is passed on.
+1. **Fail closed.** A malformed ID, an unknown account, an engine error or a timeout of a dependency (including an `OperationCanceledException` that the caller did not ask for) all return `false`. Only a request cancelled by the caller (`cancellationToken.IsCancellationRequested`) is passed on.
 2. **The course is not trusted from the caller.** The `courseId` argument of the two authorization ports is ignored for the decision. The access engine derives the course from the `assignment` resource, so a caller cannot gain access by naming a course it belongs to.
 3. **Account state is checked.** Blocked, archived and unknown accounts are denied (IDN-03).
 4. **Every decision is audited by the engine** (actor, action, resource, outcome, correlation ID), including denials.
@@ -117,7 +117,8 @@ The client never supplies a trusted account, role, membership or course. The onl
 | Teacher starts an attempt | `false` |
 | Unknown assignment, empty or non-GUID IDs | `false` |
 | The access engine throws | `false` (fail closed) |
-| The request is cancelled | cancellation is passed on |
+| The caller cancels the request | cancellation is passed on |
+| The engine, the membership reader or the account reader times out on its own (the caller did not cancel) | `false` (fail closed) |
 
 ## Open points
 

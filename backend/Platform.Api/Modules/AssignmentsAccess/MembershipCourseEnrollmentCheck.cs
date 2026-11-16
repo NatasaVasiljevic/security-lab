@@ -34,8 +34,10 @@ public sealed class MembershipCourseEnrollmentCheck(IMembershipReader membership
                    membership.Status == MembershipStatus.Active &&
                    membership.Role == CourseRole.Student;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // The caller cancelled the request: pass it on. A cancellation that the caller did not
+            // ask for (an internal timeout of the membership reader) falls through to "no".
             throw;
         }
         catch (Exception)
