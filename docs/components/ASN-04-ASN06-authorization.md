@@ -129,7 +129,7 @@ The client never supplies a trusted account, role, membership or course. The onl
 
 ## Evidence of work
 
-- Changed files: `backend/Platform.Api/Modules/AssignmentsAccess/` (adapters, account-state reader, dependency injection extension); one project reference added to `backend/Platform.Api/Platform.Api.csproj`; `backend/Platform.Tests/Assignments/AssignmentsAccessAdapterTests.cs`; this document.
-- Run instructions: `dotnet test backend/Platform.Tests/Platform.Tests.csproj --filter "FullyQualifiedName~AssignmentsAccessAdapterTests"`
-- Tests and results: 35 of 35 NUnit tests pass locally (`dotnet test`, .NET SDK 10.0.403). The tests use the real `DefaultDenyAccessDecision` with the real course role policies and in-memory data; they do not cover the database, the real identity store or HTTP.
+- Changed files: `backend/Platform.Api/Modules/AssignmentsAccess/` (adapters, account-state reader, dependency injection extension); one project reference added to `backend/Platform.Api/Platform.Api.csproj`; `backend/Platform.Tests/Assignments/AssignmentsAccessAdapterTests.cs`; `backend/Platform.Tests/Assignments/AssignmentsAccessServiceIntegrationTests.cs`; this document.
+- Run instructions: `dotnet test backend/Platform.Tests/Platform.Tests.csproj --filter "FullyQualifiedName~AssignmentsAccessAdapterTests|FullyQualifiedName~AssignmentsAccessServiceIntegrationTests"`
+- 43 of 43 NUnit tests in AssignmentsAccessAdapterTests and 12 of 12 in AssignmentsAccessServiceIntegrationTests pass locally (`dotnet test`, .NET SDK 10.0.403). The tests use the real `DefaultDenyAccessDecision` with the real course role policies and in-memory data; they do not cover the database, the real identity store or HTTP.
 - Next steps: member 5 passes the logged-in account ID from the API and registers `AddAssignmentsAccess()`; member 1 provides the assignment-to-course lookup; the course identifier type is agreed with the Access team.
